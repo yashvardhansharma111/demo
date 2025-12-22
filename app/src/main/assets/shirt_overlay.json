@@ -1,0 +1,29 @@
+{
+  "id": "shirt_overlay",
+  "type": "long_sleeve_shirt",
+  "garmentSpace": { "width": 1.0, "height": 1.0 },
+  "anchors": {
+    "leftShoulder":  [0.33, 0.14],
+    "rightShoulder": [0.67, 0.14],
+    "leftElbow":     [0.23, 0.42],
+    "rightElbow":    [0.77, 0.42],
+    "leftWrist":     [0.18, 0.75],
+    "rightWrist":    [0.82, 0.75],
+    "leftHip":       [0.40, 0.92],
+    "rightHip":      [0.60, 0.92]
+  },
+  "regions": {
+    "torso":        { "bounds": [0.36, 0.14, 0.64, 0.92] },
+    "leftSleeve":   { "bounds": [0.00, 0.14, 0.36, 0.75] },
+    "rightSleeve":  { "bounds": [0.64, 0.14, 1.00, 0.75] }
+  },
+  "mesh": {
+    "torsoGrid": [14, 20],
+    "sleeveGrid": [8, 16]
+  },
+  "fit": {
+    "widthFactor": 1.12,
+    "heightFactor": 1.08
+  }
+}
+
