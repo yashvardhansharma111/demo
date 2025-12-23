@@ -27,8 +27,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -96,6 +100,9 @@ fun CameraScreen(hasPermission: Boolean, onRequestPermission: () -> Unit) {
     // Current deformed mesh state
     var deformedMesh by remember { mutableStateOf<DeformedMesh?>(null) }
     
+    // DEBUG: Body landmarks in screen space for debug overlay
+    var debugBodyLandmarks by remember { mutableStateOf<BodyLandmarks?>(null) }
+    
     // Screen dimensions for coordinate conversion
     var screenWidth by remember { mutableStateOf(0) }
     var screenHeight by remember { mutableStateOf(0) }
@@ -130,7 +137,8 @@ fun CameraScreen(hasPermission: Boolean, onRequestPermission: () -> Unit) {
                 cameraImageHeight = cameraImageHeight,
                 screenWidth = screenWidth,
                 screenHeight = screenHeight,
-                onMeshDeformed = { mesh -> deformedMesh = mesh }
+                onMeshDeformed = { mesh -> deformedMesh = mesh },
+                onLandmarksComputed = { landmarks -> debugBodyLandmarks = landmarks }
             )
         }
     }
@@ -189,6 +197,22 @@ fun CameraScreen(hasPermission: Boolean, onRequestPermission: () -> Unit) {
             GarmentMeshOverlay(
                 deformedMesh = deformedMesh!!,
                 textureResourceId = R.drawable.shirt_overlay
+            )
+        }
+        
+        // DEBUG: Visual debugging overlay (draws landmarks, anchors, quad, mesh vertices)
+        if (overlayMode == OverlayMode.SHIRT && 
+            deformedMesh != null && 
+            metadata != null &&
+            debugBodyLandmarks != null &&
+            screenWidth > 0 && 
+            screenHeight > 0) {
+            GarmentDebugOverlay(
+                bodyLandmarks = debugBodyLandmarks!!,
+                metadata = metadata,
+                deformedMesh = deformedMesh!!,
+                screenWidth = screenWidth,
+                screenHeight = screenHeight
             )
         }
         
@@ -345,7 +369,8 @@ private fun processLandmarksSafely(
     cameraImageHeight: Int,
     screenWidth: Int,
     screenHeight: Int,
-    onMeshDeformed: (DeformedMesh?) -> Unit
+    onMeshDeformed: (DeformedMesh?) -> Unit,
+    onLandmarksComputed: (BodyLandmarks) -> Unit
 ) {
     try {
         if (transformData != null && 
@@ -457,6 +482,9 @@ private fun processLandmarksSafely(
                 onMeshDeformed(null)
                 return
             }
+            
+            // DEBUG: Store landmarks for debug overlay
+            onLandmarksComputed(bodyLandmarks)
             
             // Deform mesh based on body landmarks
             val deformed = MeshDeformer.deformMesh(

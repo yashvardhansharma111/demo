@@ -1,29 +1,34 @@
 {
-  "id": "shirt_overlay",
+  "id": "shirt_overlay_flannel",
   "type": "long_sleeve_shirt",
   "garmentSpace": { "width": 1.0, "height": 1.0 },
   "anchors": {
-    "leftShoulder":  [0.33, 0.14],
-    "rightShoulder": [0.67, 0.14],
-    "leftElbow":     [0.23, 0.42],
-    "rightElbow":    [0.77, 0.42],
-    "leftWrist":     [0.18, 0.75],
-    "rightWrist":    [0.82, 0.75],
-    "leftHip":       [0.40, 0.92],
-    "rightHip":      [0.60, 0.92]
+    "leftShoulder":  [0.195, 0.176],
+    "rightShoulder": [0.729, 0.168],
+    "leftElbow":     [0.092, 0.551],
+    "rightElbow":    [0.848, 0.531],
+    "leftWrist":     [0.101, 0.811],
+    "rightWrist":    [0.780, 0.793],
+    "leftHip":       [0.238, 0.925],
+    "rightHip":      [0.699, 0.926]
   },
-  "regions": {
-    "torso":        { "bounds": [0.36, 0.14, 0.64, 0.92] },
-    "leftSleeve":   { "bounds": [0.00, 0.14, 0.36, 0.75] },
-    "rightSleeve":  { "bounds": [0.64, 0.14, 1.00, 0.75] }
+"regions": {
+  "torso": {
+    "bounds": [0.195, 0.168, 0.729, 0.926]
   },
+  "leftSleeve": {
+    "bounds": [0.101, 0.176, 0.195, 0.811]
+  },
+  "rightSleeve": {
+    "bounds": [0.729, 0.168, 0.780, 0.793]
+  }
+},
   "mesh": {
     "torsoGrid": [14, 20],
     "sleeveGrid": [8, 16]
   },
   "fit": {
-    "widthFactor": 1.12,
+    "widthFactor": 1.10,
     "heightFactor": 1.08
   }
 }
-

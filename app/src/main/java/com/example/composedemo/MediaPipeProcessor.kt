@@ -141,14 +141,40 @@ class MediaPipeProcessor(
         val leftHip = landmarks[23]
         val rightHip = landmarks[24]
         
+        // CRITICAL: POSE UN-MIRRORING FOR FRONT CAMERA
+        // MediaPipe Pose landmarks from front camera are horizontally mirrored.
+        // When you move your right arm, MediaPipe sees it on the left side of the image.
+        // To correct this, flip all X coordinates: correctedX = 1.0f - originalX
+        // This ensures LEFT/RIGHT body parts map correctly to garment regions.
+        // Applied once here, immediately after landmark extraction.
+        fun unMirrorX(x: Float): Float = 1.0f - x
+        
+        val leftShoulderX = unMirrorX(leftShoulder.x())
+        val leftShoulderY = leftShoulder.y()
+        val rightShoulderX = unMirrorX(rightShoulder.x())
+        val rightShoulderY = rightShoulder.y()
+        val leftElbowX = unMirrorX(leftElbow.x())
+        val leftElbowY = leftElbow.y()
+        val rightElbowX = unMirrorX(rightElbow.x())
+        val rightElbowY = rightElbow.y()
+        val leftWristX = unMirrorX(leftWrist.x())
+        val leftWristY = leftWrist.y()
+        val rightWristX = unMirrorX(rightWrist.x())
+        val rightWristY = rightWrist.y()
+        val leftHipX = unMirrorX(leftHip.x())
+        val leftHipY = leftHip.y()
+        val rightHipX = unMirrorX(rightHip.x())
+        val rightHipY = rightHip.y()
+        
         // CRITICAL: Validate landmark coordinates - check if they're reasonable (not all zeros)
         // MediaPipe returns normalized coordinates (0-1), so valid landmarks should be within this range
-        val hasValidCoordinates = leftShoulder.x() > 0f && leftShoulder.y() > 0f &&
-                                  rightShoulder.x() > 0f && rightShoulder.y() > 0f &&
-                                  leftHip.x() > 0f && leftHip.y() > 0f &&
-                                  rightHip.x() > 0f && rightHip.y() > 0f &&
-                                  leftShoulder.x() < 1f && leftShoulder.y() < 1f &&
-                                  rightShoulder.x() < 1f && rightShoulder.y() < 1f
+        // Note: After un-mirroring, coordinates are still in [0,1] range
+        val hasValidCoordinates = leftShoulderX > 0f && leftShoulderY > 0f &&
+                                  rightShoulderX > 0f && rightShoulderY > 0f &&
+                                  leftHipX > 0f && leftHipY > 0f &&
+                                  rightHipX > 0f && rightHipY > 0f &&
+                                  leftShoulderX < 1f && leftShoulderY < 1f &&
+                                  rightShoulderX < 1f && rightShoulderY < 1f
         
         if (!hasValidCoordinates) {
             // Landmarks are invalid or person not clearly visible - don't render
@@ -158,22 +184,22 @@ class MediaPipeProcessor(
             return
         }
         
-        val torsoCenterX = (leftHip.x() + rightHip.x()) / 2f
-        val torsoCenterY = (leftHip.y() + rightHip.y()) / 2f
+        val torsoCenterX = (leftHipX + rightHipX) / 2f
+        val torsoCenterY = (leftHipY + rightHipY) / 2f
         val torsoCenter = Point(torsoCenterX, torsoCenterY)
         
-        val shoulderWidth = kotlin.math.abs(rightShoulder.x() - leftShoulder.x())
+        val shoulderWidth = kotlin.math.abs(rightShoulderX - leftShoulderX)
         
         val leftArm = ArmLandmarkData(
-            shoulder = Point(leftShoulder.x(), leftShoulder.y()),
-            elbow = Point(leftElbow.x(), leftElbow.y()),
-            wrist = Point(leftWrist.x(), leftWrist.y())
+            shoulder = Point(leftShoulderX, leftShoulderY),
+            elbow = Point(leftElbowX, leftElbowY),
+            wrist = Point(leftWristX, leftWristY)
         )
         
         val rightArm = ArmLandmarkData(
-            shoulder = Point(rightShoulder.x(), rightShoulder.y()),
-            elbow = Point(rightElbow.x(), rightElbow.y()),
-            wrist = Point(rightWrist.x(), rightWrist.y())
+            shoulder = Point(rightShoulderX, rightShoulderY),
+            elbow = Point(rightElbowX, rightElbowY),
+            wrist = Point(rightWristX, rightWristY)
         )
         
         val transformData = ShirtTransformData(
@@ -181,8 +207,8 @@ class MediaPipeProcessor(
             shoulderWidth = shoulderWidth,
             leftArm = leftArm,
             rightArm = rightArm,
-            leftHip = Point(leftHip.x(), leftHip.y()),
-            rightHip = Point(rightHip.x(), rightHip.y())
+            leftHip = Point(leftHipX, leftHipY),
+            rightHip = Point(rightHipX, rightHipY)
         )
         
         // Ensure callback runs on main thread for Compose state updates

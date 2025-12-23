@@ -15,12 +15,17 @@ class GarmentGLView(context: Context) : GLSurfaceView(context) {
 
     init {
         try {
-            // CRITICAL: Enable transparency for GLSurfaceView
+            // CRITICAL: GLSurfaceView composited transparently over CameraX PreviewView
+            // The GLSurfaceView must NOT be on top (setZOrderOnTop(false)) so it can composite
+            // with the camera preview layer beneath it, rather than occluding it.
             setEGLContextClientVersion(2)
             // EGL config with alpha channel: R, G, B, A, depth, stencil
             setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-            // Make the view render on top of other views (like camera preview)
-            setZOrderOnTop(true)
+            // CRITICAL: setZOrderOnTop(false) allows transparent compositing with camera layer
+            // If true, the GLSurfaceView would occlude the camera preview completely
+            setZOrderOnTop(false)
+            // Set surface format to TRANSLUCENT for transparency support
+            holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
             // Set transparent background
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
             
@@ -67,7 +72,10 @@ class GarmentGLRenderer(
             // Now we have OpenGL context - initialize shaders
             garmentRenderer.initialize()
             
-            GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f) // Transparent background
+            // CRITICAL: Clear with transparent color (0, 0, 0, 0) so camera preview shows through
+            // This transparent clear color is required for proper compositing with the camera layer
+            // Without it, the OpenGL surface would have an opaque background that occludes the camera
+            GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
             
             surfaceCreated = true
             
