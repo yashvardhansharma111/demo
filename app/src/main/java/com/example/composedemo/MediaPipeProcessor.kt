@@ -141,6 +141,23 @@ class MediaPipeProcessor(
         val leftHip = landmarks[23]
         val rightHip = landmarks[24]
         
+        // CRITICAL: Validate landmark coordinates - check if they're reasonable (not all zeros)
+        // MediaPipe returns normalized coordinates (0-1), so valid landmarks should be within this range
+        val hasValidCoordinates = leftShoulder.x() > 0f && leftShoulder.y() > 0f &&
+                                  rightShoulder.x() > 0f && rightShoulder.y() > 0f &&
+                                  leftHip.x() > 0f && leftHip.y() > 0f &&
+                                  rightHip.x() > 0f && rightHip.y() > 0f &&
+                                  leftShoulder.x() < 1f && leftShoulder.y() < 1f &&
+                                  rightShoulder.x() < 1f && rightShoulder.y() < 1f
+        
+        if (!hasValidCoordinates) {
+            // Landmarks are invalid or person not clearly visible - don't render
+            mainHandler.post {
+                onLandmarksDetected(null)
+            }
+            return
+        }
+        
         val torsoCenterX = (leftHip.x() + rightHip.x()) / 2f
         val torsoCenterY = (leftHip.y() + rightHip.y()) / 2f
         val torsoCenter = Point(torsoCenterX, torsoCenterY)

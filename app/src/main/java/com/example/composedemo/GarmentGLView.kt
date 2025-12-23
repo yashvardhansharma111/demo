@@ -15,8 +15,15 @@ class GarmentGLView(context: Context) : GLSurfaceView(context) {
 
     init {
         try {
+            // CRITICAL: Enable transparency for GLSurfaceView
             setEGLContextClientVersion(2)
+            // EGL config with alpha channel: R, G, B, A, depth, stencil
             setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+            // Make the view render on top of other views (like camera preview)
+            setZOrderOnTop(true)
+            // Set transparent background
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            
             renderer = GarmentGLRenderer(context, this)
             setRenderer(renderer)
             renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY // Update only when dirty
@@ -80,7 +87,9 @@ class GarmentGLRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         try {
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+            // Clear with transparent color (already set in onSurfaceCreated)
+            // Only clear color buffer, not depth buffer (for better performance with transparency)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
             currentMesh?.let { mesh ->
                 garmentRenderer.render(mesh)
             }

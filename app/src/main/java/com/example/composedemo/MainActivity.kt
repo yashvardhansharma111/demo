@@ -25,8 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -278,7 +280,9 @@ fun GarmentMeshOverlay(
         update = { glView ->
             glView.updateMesh(deformedMesh)
         },
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Color.Transparent) // Ensure transparent background
     )
 }
 
@@ -353,40 +357,106 @@ private fun processLandmarksSafely(
             screenHeight > 0) {
             
             // Convert MediaPipe normalized coordinates (0-1) to screen space
-            val bodyLandmarks = BodyLandmarks(
-                leftShoulder = Offset(
-                    transformData.leftArm.shoulder.x * screenWidth,
-                    transformData.leftArm.shoulder.y * screenHeight
-                ),
-                rightShoulder = Offset(
-                    transformData.rightArm.shoulder.x * screenWidth,
-                    transformData.rightArm.shoulder.y * screenHeight
-                ),
-                leftElbow = Offset(
-                    transformData.leftArm.elbow.x * screenWidth,
-                    transformData.leftArm.elbow.y * screenHeight
-                ),
-                rightElbow = Offset(
-                    transformData.rightArm.elbow.x * screenWidth,
-                    transformData.rightArm.elbow.y * screenHeight
-                ),
-                leftWrist = Offset(
-                    transformData.leftArm.wrist.x * screenWidth,
-                    transformData.leftArm.wrist.y * screenHeight
-                ),
-                rightWrist = Offset(
-                    transformData.rightArm.wrist.x * screenWidth,
-                    transformData.rightArm.wrist.y * screenHeight
-                ),
-                leftHip = Offset(
-                    transformData.leftHip.x * screenWidth,
-                    transformData.leftHip.y * screenHeight
-                ),
-                rightHip = Offset(
-                    transformData.rightHip.x * screenWidth,
-                    transformData.rightHip.y * screenHeight
+            // CRITICAL: MediaPipe coordinates are relative to camera image orientation
+            // Camera image might be rotated (portrait camera in landscape screen or vice versa)
+            // For front camera in portrait mode: MediaPipe X = screen Y, MediaPipe Y = 1 - screen X
+            // This accounts for the 90-degree rotation between camera image and screen
+            
+            // Check if camera is in portrait (height > width) vs landscape
+            val isCameraPortrait = cameraImageHeight > cameraImageWidth
+            val isScreenPortrait = screenHeight > screenWidth
+            
+            val bodyLandmarks = if (isCameraPortrait != isScreenPortrait) {
+                // Camera and screen have different orientations - need to rotate coordinates
+                // Swap X/Y and flip one axis
+                BodyLandmarks(
+                    leftShoulder = Offset(
+                        transformData.leftArm.shoulder.y * screenWidth,
+                        (1f - transformData.leftArm.shoulder.x) * screenHeight
+                    ),
+                    rightShoulder = Offset(
+                        transformData.rightArm.shoulder.y * screenWidth,
+                        (1f - transformData.rightArm.shoulder.x) * screenHeight
+                    ),
+                    leftElbow = Offset(
+                        transformData.leftArm.elbow.y * screenWidth,
+                        (1f - transformData.leftArm.elbow.x) * screenHeight
+                    ),
+                    rightElbow = Offset(
+                        transformData.rightArm.elbow.y * screenWidth,
+                        (1f - transformData.rightArm.elbow.x) * screenHeight
+                    ),
+                    leftWrist = Offset(
+                        transformData.leftArm.wrist.y * screenWidth,
+                        (1f - transformData.leftArm.wrist.x) * screenHeight
+                    ),
+                    rightWrist = Offset(
+                        transformData.rightArm.wrist.y * screenWidth,
+                        (1f - transformData.rightArm.wrist.x) * screenHeight
+                    ),
+                    leftHip = Offset(
+                        transformData.leftHip.y * screenWidth,
+                        (1f - transformData.leftHip.x) * screenHeight
+                    ),
+                    rightHip = Offset(
+                        transformData.rightHip.y * screenWidth,
+                        (1f - transformData.rightHip.x) * screenHeight
+                    )
                 )
-            )
+            } else {
+                // Same orientation - direct mapping
+                BodyLandmarks(
+                    leftShoulder = Offset(
+                        transformData.leftArm.shoulder.x * screenWidth,
+                        transformData.leftArm.shoulder.y * screenHeight
+                    ),
+                    rightShoulder = Offset(
+                        transformData.rightArm.shoulder.x * screenWidth,
+                        transformData.rightArm.shoulder.y * screenHeight
+                    ),
+                    leftElbow = Offset(
+                        transformData.leftArm.elbow.x * screenWidth,
+                        transformData.leftArm.elbow.y * screenHeight
+                    ),
+                    rightElbow = Offset(
+                        transformData.rightArm.elbow.x * screenWidth,
+                        transformData.rightArm.elbow.y * screenHeight
+                    ),
+                    leftWrist = Offset(
+                        transformData.leftArm.wrist.x * screenWidth,
+                        transformData.leftArm.wrist.y * screenHeight
+                    ),
+                    rightWrist = Offset(
+                        transformData.rightArm.wrist.x * screenWidth,
+                        transformData.rightArm.wrist.y * screenHeight
+                    ),
+                    leftHip = Offset(
+                        transformData.leftHip.x * screenWidth,
+                        transformData.leftHip.y * screenHeight
+                    ),
+                    rightHip = Offset(
+                        transformData.rightHip.x * screenWidth,
+                        transformData.rightHip.y * screenHeight
+                    )
+                )
+            }
+            
+            // Relaxed validation: only check that coordinates are reasonable (not NaN/Infinity)
+            // Allow some out-of-bounds since camera aspect ratio might differ
+            val allLandmarksValid = listOf(
+                bodyLandmarks.leftShoulder, bodyLandmarks.rightShoulder,
+                bodyLandmarks.leftHip, bodyLandmarks.rightHip
+            ).all { landmark ->
+                landmark.x.isFinite() && landmark.y.isFinite() &&
+                landmark.x > -screenWidth && landmark.x < screenWidth * 2f &&
+                landmark.y > -screenHeight && landmark.y < screenHeight * 2f
+            }
+            
+            if (!allLandmarksValid) {
+                android.util.Log.w("MainActivity", "Landmarks validation failed")
+                onMeshDeformed(null)
+                return
+            }
             
             // Deform mesh based on body landmarks
             val deformed = MeshDeformer.deformMesh(

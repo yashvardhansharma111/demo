@@ -209,16 +209,18 @@ class GarmentRenderer(private val context: Context) {
             GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
 
             // Render torso
+            // Torso grid: width=14, height=20 (from metadata.mesh.torsoGrid)
             if (deformedMesh.torsoVertices.isNotEmpty()) {
-                renderRegion(deformedMesh.torsoVertices)
+                renderRegion(deformedMesh.torsoVertices, gridWidth = 14, gridHeight = 20)
             }
 
             // Render sleeves
+            // Sleeve grid: width=8, height=16 (from metadata.mesh.sleeveGrid)
             if (deformedMesh.leftSleeveVertices.isNotEmpty()) {
-                renderRegion(deformedMesh.leftSleeveVertices)
+                renderRegion(deformedMesh.leftSleeveVertices, gridWidth = 8, gridHeight = 16)
             }
             if (deformedMesh.rightSleeveVertices.isNotEmpty()) {
-                renderRegion(deformedMesh.rightSleeveVertices)
+                renderRegion(deformedMesh.rightSleeveVertices, gridWidth = 8, gridHeight = 16)
             }
 
             GLES20.glDisable(GLES20.GL_BLEND)
@@ -229,15 +231,32 @@ class GarmentRenderer(private val context: Context) {
 
     /**
      * Renders a single region (torso or sleeve) as triangles.
+     * Uses indexed rendering with GL_TRIANGLES to correctly render 2D grid topology.
+     * 
+     * @param vertices List of deformed vertices in row-major grid order
+     * @param gridWidth Number of vertices per row (columns)
+     * @param gridHeight Number of vertices per column (rows)
      */
-    private fun renderRegion(vertices: List<DeformedVertex>) {
+    private fun renderRegion(vertices: List<DeformedVertex>, gridWidth: Int, gridHeight: Int) {
         if (vertices.size < 3) return
 
+        // Validate grid dimensions match vertex count
+        val vertexCount = vertices.size
+        val expectedVertexCount = gridWidth * gridHeight
+        if (vertexCount != expectedVertexCount) {
+            android.util.Log.e("GarmentRenderer", 
+                "Grid dimension mismatch: vertexCount=$vertexCount, expected=$expectedVertexCount (${gridWidth}x${gridHeight})")
+            return
+        }
+
         try {
-            // Convert vertices to triangle strips
-            // For a grid, we render as triangle strips
+            // Create vertex and texture coordinate buffers
             val vertexBuffer = createVertexBuffer(vertices)
             val texCoordBuffer = createTexCoordBuffer(vertices)
+            
+            // Generate index buffer for 2D grid topology using actual grid dimensions
+            // Indices are required because row-major vertex order cannot form a valid triangle strip
+            val (indexBuffer, indexCount) = createIndexBuffer(gridWidth, gridHeight, vertexCount)
 
             val positionHandle = GLES20.glGetAttribLocation(programHandle, "a_Position")
             val texCoordHandle = GLES20.glGetAttribLocation(programHandle, "a_TexCoord")
@@ -249,8 +268,8 @@ class GarmentRenderer(private val context: Context) {
 
             GLES20.glEnableVertexAttribArray(positionHandle)
             GLES20.glVertexAttribPointer(
-                positionHandle, 2, GLES20.GL_FLOAT, false,
-                2 * 4, vertexBuffer
+                positionHandle, 4, GLES20.GL_FLOAT, false,
+                4 * 4, vertexBuffer  // 4 floats per vertex (x, y, z, w)
             )
 
             GLES20.glEnableVertexAttribArray(texCoordHandle)
@@ -259,9 +278,13 @@ class GarmentRenderer(private val context: Context) {
                 2 * 4, texCoordBuffer
             )
 
-            // Render as triangle strips (simplified - assumes grid topology)
-            // For production, use indexed rendering with proper grid topology
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, vertices.size)
+            // Render using indexed triangles with correct index count
+            GLES20.glDrawElements(
+                GLES20.GL_TRIANGLES,
+                indexCount,
+                GLES20.GL_UNSIGNED_SHORT,
+                indexBuffer
+            )
 
             GLES20.glDisableVertexAttribArray(positionHandle)
             GLES20.glDisableVertexAttribArray(texCoordHandle)
@@ -269,15 +292,84 @@ class GarmentRenderer(private val context: Context) {
             android.util.Log.e("GarmentRenderer", "Error rendering region", e)
         }
     }
+    
+    /**
+     * Creates index buffer for a 2D grid mesh stored in row-major order.
+     * Generates two triangles per quad cell in the grid.
+     * 
+     * Grid topology: vertices are arranged as rows × cols (row-major order)
+     * For each quad cell, creates indices:
+     *   Triangle 1: v0, v2, v1 (top-left, bottom-left, top-right)
+     *   Triangle 2: v1, v2, v3 (top-right, bottom-left, bottom-right)
+     * 
+     * @param gridWidth Number of vertices per row (columns)
+     * @param gridHeight Number of vertices per column (rows)
+     * @param vertexCount Total vertex count (must equal gridWidth * gridHeight)
+     * @return Pair of (index buffer, index count)
+     */
+    private fun createIndexBuffer(gridWidth: Int, gridHeight: Int, vertexCount: Int): Pair<java.nio.ShortBuffer, Int> {
+        // Validate grid dimensions
+        val expectedVertexCount = gridWidth * gridHeight
+        require(vertexCount == expectedVertexCount) {
+            "Grid dimension mismatch: vertexCount=$vertexCount, expected=$expectedVertexCount (${gridWidth}x${gridHeight})"
+        }
+        
+        val cols = gridWidth
+        val rows = gridHeight
+        
+        // Each quad cell needs 2 triangles × 3 indices = 6 indices
+        // Number of quads = (rows - 1) * (cols - 1)
+        val numQuads = (rows - 1) * (cols - 1)
+        val numIndices = numQuads * 6
+        
+        val buffer = java.nio.ByteBuffer.allocateDirect(numIndices * 2)  // 2 bytes per short
+        buffer.order(java.nio.ByteOrder.nativeOrder())
+        val indexBuffer = buffer.asShortBuffer()
+        
+        // Generate indices for each quad in the grid
+        // Vertices are stored in row-major order: row0_col0, row0_col1, ..., row0_colN, row1_col0, ...
+        for (y in 0 until rows - 1) {
+            for (x in 0 until cols - 1) {
+                // Calculate vertex indices for this quad (row-major indexing)
+                val v0 = (y * cols + x).toShort()           // Top-left
+                val v1 = (y * cols + x + 1).toShort()       // Top-right
+                val v2 = ((y + 1) * cols + x).toShort()     // Bottom-left
+                val v3 = ((y + 1) * cols + x + 1).toShort() // Bottom-right
+                
+                // Validate indices are within bounds
+                val maxIndex = maxOf(v0.toInt(), v1.toInt(), v2.toInt(), v3.toInt())
+                require(maxIndex < vertexCount) {
+                    "Index buffer out of bounds: maxIndex=$maxIndex, vertexCount=$vertexCount at quad ($x, $y)"
+                }
+                
+                // First triangle: v0, v2, v1 (counter-clockwise)
+                indexBuffer.put(v0)
+                indexBuffer.put(v2)
+                indexBuffer.put(v1)
+                
+                // Second triangle: v1, v2, v3 (counter-clockwise)
+                indexBuffer.put(v1)
+                indexBuffer.put(v2)
+                indexBuffer.put(v3)
+            }
+        }
+        
+        indexBuffer.position(0)
+        return Pair(indexBuffer, numIndices)
+    }
 
     private fun createVertexBuffer(vertices: List<DeformedVertex>): FloatBuffer {
-        val buffer = ByteBuffer.allocateDirect(vertices.size * 2 * 4)
+        // OpenGL expects vec4 (x, y, z, w) for position
+        // For 2D rendering: z = 0, w = 1
+        val buffer = ByteBuffer.allocateDirect(vertices.size * 4 * 4)  // 4 floats per vertex
         buffer.order(ByteOrder.nativeOrder())
         val floatBuffer = buffer.asFloatBuffer()
 
         for (vertex in vertices) {
-            floatBuffer.put(vertex.screenX)
-            floatBuffer.put(vertex.screenY)
+            floatBuffer.put(vertex.screenX)  // X in NDC space (-1 to +1)
+            floatBuffer.put(vertex.screenY)  // Y in NDC space (-1 to +1)
+            floatBuffer.put(0f)              // Z = 0 for 2D
+            floatBuffer.put(1f)              // W = 1 for homogeneous coordinates
         }
         floatBuffer.position(0)
         return floatBuffer

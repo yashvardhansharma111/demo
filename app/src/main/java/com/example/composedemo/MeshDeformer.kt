@@ -157,9 +157,12 @@ object MeshDeformer {
         }
 
         // CRITICAL: Convert screen coordinates to OpenGL NDC space (-1 to +1)
-        // MediaPipe gives normalized (0-1), we need to convert to screen pixels first, then to NDC
-        val ndcX = (screenX / screenWidth) * 2f - 1f
-        val ndcY = 1f - (screenY / screenHeight) * 2f  // Flip Y axis (screen Y=0 is top, OpenGL Y=1 is top)
+        // OpenGL NDC: (-1,-1) is bottom-left, (1,1) is top-right
+        // Screen: (0,0) is top-left, (width,height) is bottom-right
+        // Formula: ndcX = (screenX / screenWidth) * 2 - 1
+        //          ndcY = 1 - (screenY / screenHeight) * 2  (flip Y because screen Y=0 is top, OpenGL Y=-1 is bottom)
+        val ndcX = (screenX / screenWidth.toFloat()) * 2f - 1f
+        val ndcY = 1f - (screenY / screenHeight.toFloat()) * 2f
 
         return DeformedVertex(
             screenX = ndcX,
@@ -219,19 +222,28 @@ object MeshDeformer {
      * Validates that landmarks are not zero/invalid.
      */
     private fun isValidLandmarks(landmarks: BodyLandmarks): Boolean {
-        // Check shoulders (most critical)
-        if (landmarks.leftShoulder.x <= 0f || landmarks.leftShoulder.y <= 0f ||
-            landmarks.rightShoulder.x <= 0f || landmarks.rightShoulder.y <= 0f) {
-            return false
-        }
-        
         // Check for NaN or Infinity
-        fun isValidFloat(f: Float): Boolean = f.isFinite() && f > 0f && f < Float.MAX_VALUE
+        fun isValidFloat(f: Float): Boolean = f.isFinite() && f < Float.MAX_VALUE && f > -Float.MAX_VALUE
         
-        return isValidFloat(landmarks.leftShoulder.x) && isValidFloat(landmarks.leftShoulder.y) &&
-               isValidFloat(landmarks.rightShoulder.x) && isValidFloat(landmarks.rightShoulder.y) &&
-               isValidFloat(landmarks.leftHip.x) && isValidFloat(landmarks.leftHip.y) &&
-               isValidFloat(landmarks.rightHip.x) && isValidFloat(landmarks.rightHip.y)
+        // Relaxed validation: only check that values are finite and reasonable
+        // Don't require > 0 because coordinates might be negative after rotation
+        val shouldersValid = isValidFloat(landmarks.leftShoulder.x) && 
+                             isValidFloat(landmarks.leftShoulder.y) &&
+                             isValidFloat(landmarks.rightShoulder.x) && 
+                             isValidFloat(landmarks.rightShoulder.y)
+        
+        val hipsValid = isValidFloat(landmarks.leftHip.x) && 
+                       isValidFloat(landmarks.leftHip.y) &&
+                       isValidFloat(landmarks.rightHip.x) && 
+                       isValidFloat(landmarks.rightHip.y)
+        
+        // Check that shoulders are not at the same point (indicates invalid detection)
+        val shoulderDistance = distance(
+            landmarks.leftShoulder.x, landmarks.leftShoulder.y,
+            landmarks.rightShoulder.x, landmarks.rightShoulder.y
+        )
+        
+        return shouldersValid && hipsValid && shoulderDistance > 10f  // At least 10 pixels apart
     }
 
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
