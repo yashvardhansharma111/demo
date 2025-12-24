@@ -1,0 +1,35 @@
+{
+    "id": "shirt_overlay_flannel",
+    "type": "long_sleeve_shirt",
+    "garmentSpace": { "width": 1.0, "height": 1.0 },
+    "anchors": {
+      "leftShoulder":  [0.195, 0.176],
+      "rightShoulder": [0.729, 0.168],
+      "leftElbow":     [0.092, 0.551],
+      "rightElbow":    [0.848, 0.531],
+      "leftWrist":     [0.101, 0.811],
+      "rightWrist":    [0.780, 0.793],
+      "leftHip":       [0.238, 0.925],
+      "rightHip":      [0.699, 0.926]
+    },
+  "regions": {
+    "torso": {
+      "bounds": [0.195, 0.168, 0.729, 0.926]
+    },
+    "leftSleeve": {
+      "bounds": [0.101, 0.176, 0.195, 0.811]
+    },
+    "rightSleeve": {
+      "bounds": [0.729, 0.168, 0.780, 0.793]
+    }
+  },
+    "mesh": {
+      "torsoGrid": [14, 20],
+      "sleeveGrid": [8, 16]
+    },
+    "fit": {
+      "widthFactor": 1.10,
+      "heightFactor": 1.08
+    }
+  }
+  

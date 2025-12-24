@@ -114,11 +114,23 @@ fun GarmentDebugOverlay(
             val screenPos = ndcToScreen(vertex.screenX, vertex.screenY)
             drawPoint(screenPos, Color.Blue, radius = 4f)
         }
-        
+
         deformedMesh.rightSleeveVertices.forEach { vertex ->
             val screenPos = ndcToScreen(vertex.screenX, vertex.screenY)
             drawPoint(screenPos, Color.Blue, radius = 4f)
         }
+        
+        // 5️⃣ LAYER 5: Sleeve attachment points (CYAN circles) - shows where sleeves attach
+        // Sleeves attach to shoulder landmarks (red dots)
+        drawPoint(bodyLandmarks.leftShoulder, Color.Cyan, radius = 12f)
+        drawPoint(bodyLandmarks.rightShoulder, Color.Cyan, radius = 12f)
+        Log.d("DEBUG_OVERLAY", """
+            Sleeve attachment points (CYAN):
+            Left shoulder: (${bodyLandmarks.leftShoulder.x}, ${bodyLandmarks.leftShoulder.y})
+            Right shoulder: (${bodyLandmarks.rightShoulder.x}, ${bodyLandmarks.rightShoulder.y})
+            Left hip: (${bodyLandmarks.leftHip.x}, ${bodyLandmarks.leftHip.y})
+            Right hip: (${bodyLandmarks.rightHip.x}, ${bodyLandmarks.rightHip.y})
+        """.trimIndent())
         
         // QUICK SANITY CHECK: Log first torso vertex garment coordinates
         if (deformedMesh.torsoVertices.isNotEmpty()) {
