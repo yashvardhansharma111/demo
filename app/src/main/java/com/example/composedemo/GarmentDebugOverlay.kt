@@ -6,140 +6,187 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import android.util.Log
+import androidx.compose.ui.graphics.nativeCanvas
+import android.graphics.Paint
+import android.graphics.Typeface
+import kotlin.math.sqrt
 
 /**
- * DEBUG OVERLAY: Visual debugging for garment deformation pipeline.
- * Draws debug layers in this order:
- * 1. MediaPipe body landmarks (RED dots) - Layer 1
- * 2. Garment anchor points (GREEN dots) - Layer 2
- * 3. Torso quad edges (YELLOW lines) - Layer 3
- * 4. Deformed mesh vertices (BLUE dots) - Layer 4
+ * DEBUG OVERLAY: Shows MediaPipe body landmarks as RED dots (skeleton)
+ * and fabric silhouette points as BLACK dots (shirt outline).
  */
 @Composable
 fun GarmentDebugOverlay(
     bodyLandmarks: BodyLandmarks,
-    metadata: GarmentMetadata,
-    deformedMesh: DeformedMesh,
     screenWidth: Int,
     screenHeight: Int
 ) {
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val paint = androidx.compose.ui.graphics.Paint().apply {
-            isAntiAlias = true
-        }
-        
         // Helper function to draw a point
-        fun drawPoint(offset: Offset, color: Color, radius: Float = 8f) {
+        fun drawPoint(offset: Offset, color: Color, radius: Float = 10f) {
             drawCircle(center = offset, radius = radius, color = color)
         }
         
-        // Helper function to draw a line
-        fun drawLineHelper(start: Offset, end: Offset, color: Color, strokeWidth: Float = 3f) {
-            drawLine(color = color, start = start, end = end, strokeWidth = strokeWidth)
+        // Helper function to draw text label
+        fun DrawScope.drawLabel(offset: Offset, text: String) {
+            val paint = Paint().apply {
+                color = android.graphics.Color.BLACK
+                textSize = 40f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            drawContext.canvas.nativeCanvas.drawText(
+                text,
+                offset.x,
+                offset.y - 20f, // Position text above the point
+                paint
+            )
         }
         
-        // 1️⃣ LAYER 1: MediaPipe body landmarks (RED dots)
-        // This tells you if pose itself is correct
-        // Should see dots exactly on your shoulders, elbows, hips
-        drawPoint(bodyLandmarks.leftShoulder, Color.Red)
-        drawPoint(bodyLandmarks.rightShoulder, Color.Red)
-        drawPoint(bodyLandmarks.leftElbow, Color.Red)
-        drawPoint(bodyLandmarks.rightElbow, Color.Red)
-        drawPoint(bodyLandmarks.leftHip, Color.Red)
-        drawPoint(bodyLandmarks.rightHip, Color.Red)
-        
-        // 2️⃣ LAYER 2: Garment anchor points (GREEN dots)
-        // This shows if metadata → body mapping makes sense
-        // Map garment anchor points to body space using bilinear interpolation
-        fun mapAnchorToBody(anchor: Point2D): Offset {
-            // For torso anchors, use quad interpolation
-            val topX = bodyLandmarks.leftShoulder.x + 
-                      (bodyLandmarks.rightShoulder.x - bodyLandmarks.leftShoulder.x) * anchor.x
-            val topY = bodyLandmarks.leftShoulder.y + 
-                      (bodyLandmarks.rightShoulder.y - bodyLandmarks.leftShoulder.y) * anchor.x
-            val bottomX = bodyLandmarks.leftHip.x + 
-                         (bodyLandmarks.rightHip.x - bodyLandmarks.leftHip.x) * anchor.x
-            val bottomY = bodyLandmarks.leftHip.y + 
-                         (bodyLandmarks.rightHip.y - bodyLandmarks.leftHip.y) * anchor.x
-            
-            val x = topX + (bottomX - topX) * anchor.y
-            val y = topY + (bottomY - topY) * anchor.y
-            return Offset(x, y)
+        // Helper function to compute distance
+        fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
+            val dx = x2 - x1
+            val dy = y2 - y1
+            return sqrt(dx * dx + dy * dy)
         }
         
-        drawPoint(mapAnchorToBody(metadata.anchors.leftShoulder), Color.Green)
-        drawPoint(mapAnchorToBody(metadata.anchors.rightShoulder), Color.Green)
-        drawPoint(mapAnchorToBody(metadata.anchors.leftElbow), Color.Green)
-        drawPoint(mapAnchorToBody(metadata.anchors.rightElbow), Color.Green)
-        drawPoint(mapAnchorToBody(metadata.anchors.leftHip), Color.Green)
-        drawPoint(mapAnchorToBody(metadata.anchors.rightHip), Color.Green)
-        
-        // 3️⃣ LAYER 3: Torso quad edges (YELLOW lines)
-        // This is critical and will immediately reveal the core issue
-        // Draw quad: LS ──── RS
-        //            │        │
-        //            │ TORSO  │
-        //            │        │
-        //            LH ──── RH
-        val ls = bodyLandmarks.leftShoulder
-        val rs = bodyLandmarks.rightShoulder
-        val lh = bodyLandmarks.leftHip
-        val rh = bodyLandmarks.rightHip
-        
-        drawLineHelper(ls, rs, Color.Yellow)  // Top edge: LS ──── RS
-        drawLineHelper(rs, rh, Color.Yellow)  // Right edge: RS ──── RH
-        drawLineHelper(rh, lh, Color.Yellow)  // Bottom edge: RH ──── LH
-        drawLineHelper(lh, ls, Color.Yellow)   // Left edge: LH ──── LS
-        
-        // 4️⃣ LAYER 4: Deformed mesh vertices (BLUE dots)
-        // Draw torso vertices (convert from NDC back to screen space for visualization)
-        fun ndcToScreen(ndcX: Float, ndcY: Float): Offset {
-            val x = (ndcX + 1f) / 2f * screenWidth
-            val y = (1f - ndcY) / 2f * screenHeight  // Flip Y back
-            return Offset(x, y)
+        // Helper function to normalize vector
+        fun normalize(vec: Offset): Offset {
+            val len = distance(vec.x, vec.y, 0f, 0f)
+            return if (len > 0.001f) {
+                Offset(vec.x / len, vec.y / len)
+            } else {
+                Offset(0f, 1f) // Default: straight down
+            }
         }
         
-        // Draw torso vertices
-        deformedMesh.torsoVertices.forEach { vertex ->
-            val screenPos = ndcToScreen(vertex.screenX, vertex.screenY)
-            drawPoint(screenPos, Color.Blue, radius = 4f)
-        }
+        // ===================================================================
+        // RED DOTS: MediaPipe body landmarks (skeleton) - UNCHANGED
+        // ===================================================================
+        // Shoulders
+        drawPoint(bodyLandmarks.leftShoulder, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.leftShoulder, "s1")
         
-        // Draw sleeve vertices
-        deformedMesh.leftSleeveVertices.forEach { vertex ->
-            val screenPos = ndcToScreen(vertex.screenX, vertex.screenY)
-            drawPoint(screenPos, Color.Blue, radius = 4f)
-        }
-
-        deformedMesh.rightSleeveVertices.forEach { vertex ->
-            val screenPos = ndcToScreen(vertex.screenX, vertex.screenY)
-            drawPoint(screenPos, Color.Blue, radius = 4f)
-        }
+        drawPoint(bodyLandmarks.rightShoulder, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.rightShoulder, "s2")
         
-        // 5️⃣ LAYER 5: Sleeve attachment points (CYAN circles) - shows where sleeves attach
-        // Sleeves attach to shoulder landmarks (red dots)
-        drawPoint(bodyLandmarks.leftShoulder, Color.Cyan, radius = 12f)
-        drawPoint(bodyLandmarks.rightShoulder, Color.Cyan, radius = 12f)
-        Log.d("DEBUG_OVERLAY", """
-            Sleeve attachment points (CYAN):
-            Left shoulder: (${bodyLandmarks.leftShoulder.x}, ${bodyLandmarks.leftShoulder.y})
-            Right shoulder: (${bodyLandmarks.rightShoulder.x}, ${bodyLandmarks.rightShoulder.y})
-            Left hip: (${bodyLandmarks.leftHip.x}, ${bodyLandmarks.leftHip.y})
-            Right hip: (${bodyLandmarks.rightHip.x}, ${bodyLandmarks.rightHip.y})
-        """.trimIndent())
+        // Elbows
+        drawPoint(bodyLandmarks.leftElbow, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.leftElbow, "e1")
         
-        // QUICK SANITY CHECK: Log first torso vertex garment coordinates
-        if (deformedMesh.torsoVertices.isNotEmpty()) {
-            // Log vertex count for debugging
-            Log.d("DEBUG_OVERLAY", 
-                "Drawing ${deformedMesh.torsoVertices.size} torso vertices, " +
-                "${deformedMesh.leftSleeveVertices.size} left sleeve vertices, " +
-                "${deformedMesh.rightSleeveVertices.size} right sleeve vertices")
-        }
+        drawPoint(bodyLandmarks.rightElbow, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.rightElbow, "e2")
+        
+        // Wrists
+        drawPoint(bodyLandmarks.leftWrist, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.leftWrist, "w1")
+        
+        drawPoint(bodyLandmarks.rightWrist, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.rightWrist, "w2")
+        
+        // Hips
+        drawPoint(bodyLandmarks.leftHip, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.leftHip, "h1")
+        
+        drawPoint(bodyLandmarks.rightHip, Color.Red, radius = 12f)
+        drawLabel(bodyLandmarks.rightHip, "h2")
+        
+        // ===================================================================
+        // BLACK DOTS: Fabric silhouette points (shirt outline)
+        // ===================================================================
+        // Step 1: Compute body centers and directions
+        val shoulderCenter = Offset(
+            (bodyLandmarks.leftShoulder.x + bodyLandmarks.rightShoulder.x) * 0.5f,
+            (bodyLandmarks.leftShoulder.y + bodyLandmarks.rightShoulder.y) * 0.5f
+        )
+        val hipCenter = Offset(
+            (bodyLandmarks.leftHip.x + bodyLandmarks.rightHip.x) * 0.5f,
+            (bodyLandmarks.leftHip.y + bodyLandmarks.rightHip.y) * 0.5f
+        )
+        
+        // Body down direction (normalized)
+        val downVec = Offset(hipCenter.x - shoulderCenter.x, hipCenter.y - shoulderCenter.y)
+        val bodyDown = normalize(downVec)
+        
+        // Body right direction (perpendicular to down, pointing right)
+        val bodyRight = Offset(-bodyDown.y, bodyDown.x)
+        
+        // Step 2: Compute reference dimensions
+        val shoulderWidth = distance(
+            bodyLandmarks.leftShoulder.x, bodyLandmarks.leftShoulder.y,
+            bodyLandmarks.rightShoulder.x, bodyLandmarks.rightShoulder.y
+        )
+        val torsoHeight = distance(shoulderCenter.x, shoulderCenter.y, hipCenter.x, hipCenter.y)
+        
+        // Step 3: Compute offsets (ratios, not pixels)
+        // REDUCED by 90% (keeping 10% of previous values)
+        val shoulderOut = shoulderWidth * 0.82f  // 10% of 2.4f
+        val chestOut = shoulderWidth * 0.75f     // 10% of 2.7f
+        val hemOut = shoulderWidth * 0.9f       // 10% of 2.4f
+        
+        val shoulderDrop = torsoHeight * 0.1f
+        val chestDrop = torsoHeight * 0.3f
+        val shoulderLift = torsoHeight * 0.15f  // Move p0, p1 upward above s1, s2
+        
+        // Step 4: Compute fabric silhouette points (p0-p5)
+        // p0 and p1: Move UPWARD (subtract from Y) to position above s1, s2
+        val p0 = Offset(
+            shoulderCenter.x - bodyRight.x * shoulderOut + bodyDown.x * shoulderDrop,
+            shoulderCenter.y - bodyRight.y * shoulderOut + bodyDown.y * shoulderDrop - shoulderLift
+        )
+        val p1 = Offset(
+            shoulderCenter.x + bodyRight.x * shoulderOut + bodyDown.x * shoulderDrop,
+            shoulderCenter.y + bodyRight.y * shoulderOut + bodyDown.y * shoulderDrop - shoulderLift
+        )
+        
+        val p2 = Offset(
+            shoulderCenter.x - bodyRight.x * chestOut + bodyDown.x * chestDrop,
+            shoulderCenter.y - bodyRight.y * chestOut + bodyDown.y * chestDrop
+        )
+        val p3 = Offset(
+            shoulderCenter.x + bodyRight.x * chestOut + bodyDown.x * chestDrop,
+            shoulderCenter.y + bodyRight.y * chestOut + bodyDown.y * chestDrop
+        )
+        
+        val p4 = Offset(
+            hipCenter.x - bodyRight.x * hemOut,
+            hipCenter.y - bodyRight.y * hemOut
+        )
+        val p5 = Offset(
+            hipCenter.x + bodyRight.x * hemOut,
+            hipCenter.y + bodyRight.y * hemOut
+        )
+        
+        // Draw black dots for fabric silhouette
+        drawPoint(p0, Color.Black, radius = 14f)
+        drawPoint(p1, Color.Black, radius = 14f)
+        drawPoint(p2, Color.Black, radius = 14f)
+        drawPoint(p3, Color.Black, radius = 14f)
+        drawPoint(p4, Color.Black, radius = 14f)
+        drawPoint(p5, Color.Black, radius = 14f)
+        
+        // Draw labels for black dots
+        drawLabel(p0, "p0")
+        drawLabel(p1, "p1")
+        drawLabel(p2, "p2")
+        drawLabel(p3, "p3")
+        drawLabel(p4, "p4")
+        drawLabel(p5, "p5")
+        
+        // ===================================================================
+        // WHITE LINES: Connect fabric silhouette points (optional)
+        // ===================================================================
+        // Top edge: p0 → p1
+        drawLine(color = Color.White, start = p0, end = p1, strokeWidth = 2f)
+        
+        // Left side: p0 → p2 → p4
+        drawLine(color = Color.White, start = p0, end = p2, strokeWidth = 2f)
+        drawLine(color = Color.White, start = p2, end = p4, strokeWidth = 2f)
+        
+        // Right side: p1 → p3 → p5
+        drawLine(color = Color.White, start = p1, end = p3, strokeWidth = 2f)
+        drawLine(color = Color.White, start = p3, end = p5, strokeWidth = 2f)
     }
 }
 

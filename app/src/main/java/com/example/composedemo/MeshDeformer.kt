@@ -55,76 +55,95 @@ object MeshDeformer {
             )
         }
 
-        // ===============================
-        // CORRECT CLOTHING SHOULDER LOGIC
-        // ===============================
-        val chestY = (bodyLandmarks.leftShoulder.y + bodyLandmarks.rightShoulder.y) * 0.5f
-
-        val shoulderSpan = distance(
+        // ===================================================================
+        // COMPUTE FABRIC SILHOUETTE POINTS (p0-p5) - SAME AS DEBUG OVERLAY
+        // ===================================================================
+        // Step 1: Compute body centers and directions
+        val shoulderCenter = Offset(
+            (bodyLandmarks.leftShoulder.x + bodyLandmarks.rightShoulder.x) * 0.5f,
+            (bodyLandmarks.leftShoulder.y + bodyLandmarks.rightShoulder.y) * 0.5f
+        )
+        val hipCenter = Offset(
+            (bodyLandmarks.leftHip.x + bodyLandmarks.rightHip.x) * 0.5f,
+            (bodyLandmarks.leftHip.y + bodyLandmarks.rightHip.y) * 0.5f
+        )
+        
+        // Body down direction (normalized)
+        val downVec = Offset(hipCenter.x - shoulderCenter.x, hipCenter.y - shoulderCenter.y)
+        val downLen = distance(downVec.x, downVec.y, 0f, 0f)
+        val bodyDown = if (downLen > 0.001f) {
+            Offset(downVec.x / downLen, downVec.y / downLen)
+        } else {
+            Offset(0f, 1f)  // Default: straight down
+        }
+        
+        // Body right direction (perpendicular to down, pointing right)
+        val bodyRight = Offset(-bodyDown.y, bodyDown.x)
+        
+        // Step 2: Compute reference dimensions
+        val shoulderWidth = distance(
             bodyLandmarks.leftShoulder.x, bodyLandmarks.leftShoulder.y,
             bodyLandmarks.rightShoulder.x, bodyLandmarks.rightShoulder.y
         )
-
-        val outwardOffset = shoulderSpan * 0.45f
-        val verticalDrop = shoulderSpan * 0.12f
-
-        val adjustedLeftShoulder = Offset(
-            bodyLandmarks.leftShoulder.x - outwardOffset,
-            chestY + verticalDrop
+        val torsoHeight = distance(shoulderCenter.x, shoulderCenter.y, hipCenter.x, hipCenter.y)
+        
+        // Step 3: Compute offsets (SAME VALUES AS DEBUG OVERLAY)
+        val shoulderOut = shoulderWidth * 0.82f
+        val chestOut = shoulderWidth * 0.75f
+        val hemOut = shoulderWidth * 0.9f
+        
+        val shoulderDrop = torsoHeight * 0.1f
+        val chestDrop = torsoHeight * 0.3f
+        val shoulderLift = torsoHeight * 0.15f  // Move p0, p1 upward above s1, s2
+        
+        // Step 4: Compute fabric silhouette points (p0-p5)
+        val p0 = Offset(
+            shoulderCenter.x - bodyRight.x * shoulderOut + bodyDown.x * shoulderDrop,
+            shoulderCenter.y - bodyRight.y * shoulderOut + bodyDown.y * shoulderDrop - shoulderLift
+        )
+        val p1 = Offset(
+            shoulderCenter.x + bodyRight.x * shoulderOut + bodyDown.x * shoulderDrop,
+            shoulderCenter.y + bodyRight.y * shoulderOut + bodyDown.y * shoulderDrop - shoulderLift
+        )
+        
+        val p2 = Offset(
+            shoulderCenter.x - bodyRight.x * chestOut + bodyDown.x * chestDrop,
+            shoulderCenter.y - bodyRight.y * chestOut + bodyDown.y * chestDrop
+        )
+        val p3 = Offset(
+            shoulderCenter.x + bodyRight.x * chestOut + bodyDown.x * chestDrop,
+            shoulderCenter.y + bodyRight.y * chestOut + bodyDown.y * chestDrop
+        )
+        
+        val p4 = Offset(
+            hipCenter.x - bodyRight.x * hemOut,
+            hipCenter.y - bodyRight.y * hemOut
+        )
+        val p5 = Offset(
+            hipCenter.x + bodyRight.x * hemOut,
+            hipCenter.y + bodyRight.y * hemOut
         )
 
-        val adjustedRightShoulder = Offset(
-            bodyLandmarks.rightShoulder.x + outwardOffset,
-            chestY + verticalDrop
-        )
-
-        val adjustedLandmarks = BodyLandmarks(
-            leftShoulder = adjustedLeftShoulder,
-            rightShoulder = adjustedRightShoulder,
-            leftElbow = bodyLandmarks.leftElbow,
-            rightElbow = bodyLandmarks.rightElbow,
-            leftWrist = bodyLandmarks.leftWrist,
-            rightWrist = bodyLandmarks.rightWrist,
-            leftHip = bodyLandmarks.leftHip,
-            rightHip = bodyLandmarks.rightHip
-        )
-
-        val shoulderWidth = distance(
-            adjustedLeftShoulder.x, adjustedLeftShoulder.y,
-            adjustedRightShoulder.x, adjustedRightShoulder.y
-        )
-
-        val torsoHeight = distance(
-            (adjustedLeftShoulder.x + adjustedRightShoulder.x) / 2f,
-            (adjustedLeftShoulder.y + adjustedRightShoulder.y) / 2f,
-            (bodyLandmarks.leftHip.x + bodyLandmarks.rightHip.x) / 2f,
-            (bodyLandmarks.leftHip.y + bodyLandmarks.rightHip.y) / 2f
-        )
-
-        val baseWidth = shoulderWidth * metadata.fit.widthFactor
-        val baseHeight = torsoHeight * metadata.fit.heightFactor
-        val clampedWidth = baseWidth.coerceIn(shoulderWidth * 0.85f, shoulderWidth * 1.15f)
-        val clampedHeight = baseHeight.coerceIn(torsoHeight * 0.85f, torsoHeight * 1.15f)
-
-        val scaleX = clampedWidth / metadata.garmentSpace.width
-        val scaleY = clampedHeight / metadata.garmentSpace.height
-
-        // FOCUS: Torso using bodyLandmarks directly to match yellow quad exactly
-        // This removes adjustments so we can verify coordinate conversion is correct
+        // ===================================================================
+        // DEFORM TORSO: Use fabric silhouette points (p0-p5)
+        // ===================================================================
         val torsoVertices = mesh.torsoVertices.map { vertex ->
-            deformVertexTorso(
+            deformVertexTorsoWithSilhouette(
                 vertex,
-                bodyLandmarks,  // Use bodyLandmarks directly (matches yellow quad)
+                p0, p1, p2, p3, p4, p5,  // Use silhouette points
                 screenWidth,
                 screenHeight,
                 metadata
             )
         }
 
+        // Sleeves attach from p0 (left) and p1 (right) - fabric silhouette shoulder points
+        // FIX: Swap p0 and p1 to fix left/right inversion
         val leftSleeveVertices = mesh.leftSleeveVertices.map { vertex ->
             deformVertexSleeve(
                 vertex,
                 bodyLandmarks,
+                p1,  // Left sleeve attaches from p1 (swapped to fix inversion)
                 isLeftSleeve = true,
                 screenWidth,
                 screenHeight,
@@ -136,6 +155,7 @@ object MeshDeformer {
             deformVertexSleeve(
                 vertex,
                 bodyLandmarks,
+                p0,  // Right sleeve attaches from p0 (swapped to fix inversion)
                 isLeftSleeve = false,
                 screenWidth,
                 screenHeight,
@@ -151,14 +171,13 @@ object MeshDeformer {
     }
 
     /**
-     * SIMPLIFIED: Deforms a torso vertex using bilinear quad interpolation.
-     * Uses bodyLandmarks directly to match yellow quad exactly.
-     *
-     * Goal: Blue mesh vertices should perfectly align with yellow quad edges.
+     * Deforms a torso vertex using fabric silhouette points (p0-p5).
+     * Mesh vertices are positioned ON the black silhouette points, not inside.
+     * Uses 3-edge interpolation: top (p0-p1), mid (p2-p3), bottom (p4-p5).
      */
-    private fun deformVertexTorso(
+    private fun deformVertexTorsoWithSilhouette(
         vertex: MeshVertex,
-        landmarks: BodyLandmarks,  // Use bodyLandmarks directly (no adjustments)
+        p0: Offset, p1: Offset, p2: Offset, p3: Offset, p4: Offset, p5: Offset,
         screenWidth: Int,
         screenHeight: Int,
         metadata: GarmentMetadata
@@ -184,28 +203,25 @@ object MeshDeformer {
         // After flipping: gy=0 → top (shoulders), gy=1 → bottom (hips)
         gy = 1f - gy
 
-        // Bilinear interpolation within quad defined by landmarks
-        // Quad: leftShoulder ──── rightShoulder
-        //       │                      │
-        //       │      TORSO           │
-        //       │                      │
-        //       leftHip ─────────── rightHip
+        // Interpolate within fabric silhouette using 3 edges
+        // Top edge: p0 → p1
+        val topEdge = lerp(p0, p1, gx)
+        // Mid edge: p2 → p3
+        val midEdge = lerp(p2, p3, gx)
+        // Bottom edge: p4 → p5
+        val botEdge = lerp(p4, p5, gx)
 
-        // Top edge interpolation (shoulders)
-        val topEdgeX = landmarks.leftShoulder.x +
-                (landmarks.rightShoulder.x - landmarks.leftShoulder.x) * gx
-        val topEdgeY = landmarks.leftShoulder.y +
-                (landmarks.rightShoulder.y - landmarks.leftShoulder.y) * gx
+        // Interpolate between edges based on gy
+        val pos = if (gy < 0.5f) {
+            // Top half: interpolate between top and mid
+            lerp(topEdge, midEdge, gy * 2f)
+        } else {
+            // Bottom half: interpolate between mid and bottom
+            lerp(midEdge, botEdge, (gy - 0.5f) * 2f)
+        }
 
-        // Bottom edge interpolation (hips)
-        val bottomEdgeX = landmarks.leftHip.x +
-                (landmarks.rightHip.x - landmarks.leftHip.x) * gx
-        val bottomEdgeY = landmarks.leftHip.y +
-                (landmarks.rightHip.y - landmarks.leftHip.y) * gx
-
-        // Vertical interpolation: gy=0 → top (shoulders), gy=1 → bottom (hips)
-        val screenX = topEdgeX + (bottomEdgeX - topEdgeX) * gy
-        val screenY = topEdgeY + (bottomEdgeY - topEdgeY) * gy
+        val screenX = pos.x
+        val screenY = pos.y
 
         // Convert screen coordinates to OpenGL NDC space
         // Screen: (0,0) top-left, (width,height) bottom-right
@@ -217,47 +233,52 @@ object MeshDeformer {
         // Diagnostic logging for corner vertices
         if (vertex.garmentX < 0.01f && vertex.garmentY < 0.01f) {
             Log.d("TORSO_DEBUG", """
-                TOP-LEFT vertex (should match leftShoulder):
+                TOP-LEFT vertex (should match p0):
                 UV: (${vertex.garmentX}, ${vertex.garmentY}) → (gx=$gx, gy=$gy)
                 Screen: ($screenX, $screenY)
                 NDC: ($ndcX, $ndcY)
-                Expected shoulder: (${landmarks.leftShoulder.x}, ${landmarks.leftShoulder.y})
+                Expected p0: (${p0.x}, ${p0.y})
             """.trimIndent())
         }
 
         if (vertex.garmentX > 0.99f && vertex.garmentY < 0.01f) {
             Log.d("TORSO_DEBUG", """
-                TOP-RIGHT vertex (should match rightShoulder):
+                TOP-RIGHT vertex (should match p1):
                 UV: (${vertex.garmentX}, ${vertex.garmentY}) → (gx=$gx, gy=$gy)
                 Screen: ($screenX, $screenY)
-                Expected shoulder: (${landmarks.rightShoulder.x}, ${landmarks.rightShoulder.y})
+                Expected p1: (${p1.x}, ${p1.y})
             """.trimIndent())
         }
 
         if (vertex.garmentX < 0.01f && vertex.garmentY > 0.99f) {
             Log.d("TORSO_DEBUG", """
-                BOTTOM-LEFT vertex (should match leftHip):
+                BOTTOM-LEFT vertex (should match p4):
                 UV: (${vertex.garmentX}, ${vertex.garmentY}) → (gx=$gx, gy=$gy)
                 Screen: ($screenX, $screenY)
-                Expected hip: (${landmarks.leftHip.x}, ${landmarks.leftHip.y})
+                Expected p4: (${p4.x}, ${p4.y})
             """.trimIndent())
         }
 
+        // Fix inverted texture: Flip V coordinate (vertical flip) to fix 180-degree inversion
+        // Collar should be at top (shoulders), bottom should be at bottom (hips)
+        val flippedV = 1.0f - vertex.v
+        
         return DeformedVertex(
             screenX = ndcX,
             screenY = ndcY,
             u = vertex.u,
-            v = vertex.v
+            v = flippedV  // Flip V to fix vertical inversion (collar at top, bottom at bottom)
         )
     }
 
     /**
-     * SIMPLIFIED: Deforms a sleeve vertex using rotation-based approach.
-     * Sleeve sticks to shoulder and rotates based on arm direction (shoulder to elbow).
+     * Deforms a sleeve vertex using rotation-based approach.
+     * Sleeve attaches from fabric silhouette shoulder point (p0 or p1) and rotates based on arm direction.
      */
     private fun deformVertexSleeve(
         vertex: MeshVertex,
         bodyLandmarks: BodyLandmarks,
+        sleeveRoot: Offset,  // p0 (left) or p1 (right) - fabric silhouette shoulder point
         isLeftSleeve: Boolean,
         screenWidth: Int,
         screenHeight: Int,
@@ -289,17 +310,12 @@ object MeshDeformer {
         // After flipping: v=0 → top (shoulder), v=1 → bottom (wrist)
         v = 1f - v
 
-        // Local sleeve space (origin at shoulder, u=0.5 is center, v=0 is top)
+        // Local sleeve space (origin at sleeve root, u=0.5 is center, v=0 is top)
         val localX = u - 0.5f  // -0.5 to +0.5 (left to right across sleeve)
         val localY = v         // 0 to 1 (top to bottom of sleeve)
 
-        // QUICK FIX FOR DEMO: Attach sleeves to hips instead of shoulders
-        // This makes sleeves appear at the correct visual position
-        val shoulder = if (isLeftSleeve) {
-            bodyLandmarks.leftHip  // Use hip instead of shoulder
-        } else {
-            bodyLandmarks.rightHip  // Use hip instead of shoulder
-        }
+        // Sleeve attaches from fabric silhouette point (p0 or p1)
+        val shoulder = sleeveRoot  // Use p0 (left) or p1 (right) from fabric silhouette
 
         val elbow = if (isLeftSleeve) {
             bodyLandmarks.leftElbow
@@ -307,31 +323,15 @@ object MeshDeformer {
             bodyLandmarks.rightElbow
         }
 
-        // SAFETY CHECK: Verify shoulder is actually above hip (Y should be less for shoulder)
-        val hip = if (isLeftSleeve) bodyLandmarks.leftHip else bodyLandmarks.rightHip
-        if (shoulder.y > hip.y) {
-            Log.e("SLEEVE_ERROR", """
-                ⚠️ COORDINATE ERROR: ${if (isLeftSleeve) "LEFT" else "RIGHT"} sleeve shoulder Y (${shoulder.y}) is BELOW hip Y (${hip.y})!
-                This suggests landmarks are swapped or coordinates are wrong.
-                Shoulder: (${shoulder.x}, ${shoulder.y})
-                Hip: (${hip.x}, ${hip.y})
-            """.trimIndent())
+        val wrist = if (isLeftSleeve) {
+            bodyLandmarks.leftWrist
+        } else {
+            bodyLandmarks.rightWrist
         }
 
-        // DIAGNOSTIC: Log landmark positions for first vertex
-        if (vertex.garmentX < 0.01f && vertex.garmentY < 0.01f) {
-            Log.d("SLEEVE_DEBUG", """
-                ${if (isLeftSleeve) "LEFT" else "RIGHT"} SLEEVE - First vertex:
-                Shoulder: (${shoulder.x}, ${shoulder.y}) ← Sleeve attaches HERE
-                Elbow: (${elbow.x}, ${elbow.y})
-                Hip: (${hip.x}, ${hip.y})
-                ✓ Verifying: shoulder.y (${shoulder.y}) < hip.y (${hip.y}) = ${shoulder.y < hip.y}
-            """.trimIndent())
-        }
-
-        // Calculate arm direction (shoulder to elbow)
-        val dx = elbow.x - shoulder.x
-        val dy = elbow.y - shoulder.y
+        // Calculate arm direction (sleeve root to wrist for full arm rotation)
+        val dx = wrist.x - shoulder.x
+        val dy = wrist.y - shoulder.y
         val angle = kotlin.math.atan2(dy, dx)
 
         // Calculate sleeve dimensions based on arm length
@@ -404,6 +404,13 @@ object MeshDeformer {
         val clampedT = t.coerceIn(edge0, edge1)
         val x = (clampedT - edge0) / (edge1 - edge0)
         return x * x * (3f - 2f * x)
+    }
+
+    private fun lerp(a: Offset, b: Offset, t: Float): Offset {
+        return Offset(
+            a.x + (b.x - a.x) * t,
+            a.y + (b.y - a.y) * t
+        )
     }
 }
 

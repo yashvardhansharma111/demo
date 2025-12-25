@@ -189,7 +189,7 @@ fun CameraScreen(hasPermission: Boolean, onRequestPermission: () -> Unit) {
             }
         }
         
-        // OpenGL mesh renderer overlay - ONLY render when we have valid mesh
+        // OpenGL mesh renderer overlay - RENDERING ON BLACK SILHOUETTE POINTS
         if (overlayMode == OverlayMode.SHIRT && 
             deformedMesh != null && 
             metadata != null &&
@@ -200,17 +200,13 @@ fun CameraScreen(hasPermission: Boolean, onRequestPermission: () -> Unit) {
             )
         }
         
-        // DEBUG: Visual debugging overlay (draws landmarks, anchors, quad, mesh vertices)
+        // DEBUG: Visual debugging overlay - ONLY RED DOTS FOR MEDIAPIPE LANDMARKS
         if (overlayMode == OverlayMode.SHIRT && 
-            deformedMesh != null && 
-            metadata != null &&
             debugBodyLandmarks != null &&
             screenWidth > 0 && 
             screenHeight > 0) {
             GarmentDebugOverlay(
                 bodyLandmarks = debugBodyLandmarks!!,
-                metadata = metadata,
-                deformedMesh = deformedMesh!!,
                 screenWidth = screenWidth,
                 screenHeight = screenHeight
             )
@@ -381,93 +377,58 @@ private fun processLandmarksSafely(
             screenWidth > 0 &&
             screenHeight > 0) {
             
-            // Convert MediaPipe normalized coordinates (0-1) to screen space
-            // CRITICAL: MediaPipe coordinates are relative to camera image orientation
-            // Camera image might be rotated (portrait camera in landscape screen or vice versa)
-            // For front camera in portrait mode: MediaPipe X = screen Y, MediaPipe Y = 1 - screen X
-            // This accounts for the 90-degree rotation between camera image and screen
-            
-            // Check if camera is in portrait (height > width) vs landscape
-            val isCameraPortrait = cameraImageHeight > cameraImageWidth
-            val isScreenPortrait = screenHeight > screenWidth
-            
-            val bodyLandmarks = if (isCameraPortrait != isScreenPortrait) {
-                // Camera and screen have different orientations - need to rotate coordinates
-                // Swap X/Y and flip one axis
-                BodyLandmarks(
-                    leftShoulder = Offset(
-                        transformData.leftArm.shoulder.y * screenWidth,
-                        (1f - transformData.leftArm.shoulder.x) * screenHeight
-                    ),
-                    rightShoulder = Offset(
-                        transformData.rightArm.shoulder.y * screenWidth,
-                        (1f - transformData.rightArm.shoulder.x) * screenHeight
-                    ),
-                    leftElbow = Offset(
-                        transformData.leftArm.elbow.y * screenWidth,
-                        (1f - transformData.leftArm.elbow.x) * screenHeight
-                    ),
-                    rightElbow = Offset(
-                        transformData.rightArm.elbow.y * screenWidth,
-                        (1f - transformData.rightArm.elbow.x) * screenHeight
-                    ),
-                    leftWrist = Offset(
-                        transformData.leftArm.wrist.y * screenWidth,
-                        (1f - transformData.leftArm.wrist.x) * screenHeight
-                    ),
-                    rightWrist = Offset(
-                        transformData.rightArm.wrist.y * screenWidth,
-                        (1f - transformData.rightArm.wrist.x) * screenHeight
-                    ),
-                    leftHip = Offset(
-                        transformData.leftHip.y * screenWidth,
-                        (1f - transformData.leftHip.x) * screenHeight
-                    ),
-                    rightHip = Offset(
-                        transformData.rightHip.y * screenWidth,
-                        (1f - transformData.rightHip.x) * screenHeight
-                    )
+            // COORDINATE CONVERSION: MediaPipe (0-1) → Screen (pixels)
+            // FIX: Flip horizontally, rotate 90 degrees, AND rotate 180 degrees (upside down)
+            // Combined transformation: newX = (1 - oldY) * screenWidth, newY = oldX * screenHeight
+            val bodyLandmarks = BodyLandmarks(
+                leftShoulder = Offset(
+                    (1.0f - transformData.leftArm.shoulder.y) * screenWidth,
+                    transformData.leftArm.shoulder.x * screenHeight
+                ),
+                rightShoulder = Offset(
+                    (1.0f - transformData.rightArm.shoulder.y) * screenWidth,
+                    transformData.rightArm.shoulder.x * screenHeight
+                ),
+                leftElbow = Offset(
+                    (1.0f - transformData.leftArm.elbow.y) * screenWidth,
+                    transformData.leftArm.elbow.x * screenHeight
+                ),
+                rightElbow = Offset(
+                    (1.0f - transformData.rightArm.elbow.y) * screenWidth,
+                    transformData.rightArm.elbow.x * screenHeight
+                ),
+                leftWrist = Offset(
+                    (1.0f - transformData.leftArm.wrist.y) * screenWidth,
+                    transformData.leftArm.wrist.x * screenHeight
+                ),
+                rightWrist = Offset(
+                    (1.0f - transformData.rightArm.wrist.y) * screenWidth,
+                    transformData.rightArm.wrist.x * screenHeight
+                ),
+                leftHip = Offset(
+                    (1.0f - transformData.leftHip.y) * screenWidth,
+                    transformData.leftHip.x * screenHeight
+                ),
+                rightHip = Offset(
+                    (1.0f - transformData.rightHip.y) * screenWidth,
+                    transformData.rightHip.x * screenHeight
                 )
-            } else {
-                // Same orientation - direct mapping
-                BodyLandmarks(
-                    leftShoulder = Offset(
-                        transformData.leftArm.shoulder.x * screenWidth,
-                        transformData.leftArm.shoulder.y * screenHeight
-                    ),
-                    rightShoulder = Offset(
-                        transformData.rightArm.shoulder.x * screenWidth,
-                        transformData.rightArm.shoulder.y * screenHeight
-                    ),
-                    leftElbow = Offset(
-                        transformData.leftArm.elbow.x * screenWidth,
-                        transformData.leftArm.elbow.y * screenHeight
-                    ),
-                    rightElbow = Offset(
-                        transformData.rightArm.elbow.x * screenWidth,
-                        transformData.rightArm.elbow.y * screenHeight
-                    ),
-                    leftWrist = Offset(
-                        transformData.leftArm.wrist.x * screenWidth,
-                        transformData.leftArm.wrist.y * screenHeight
-                    ),
-                    rightWrist = Offset(
-                        transformData.rightArm.wrist.x * screenWidth,
-                        transformData.rightArm.wrist.y * screenHeight
-                    ),
-                    leftHip = Offset(
-                        transformData.leftHip.x * screenWidth,
-                        transformData.leftHip.y * screenHeight
-                    ),
-                    rightHip = Offset(
-                        transformData.rightHip.x * screenWidth,
-                        transformData.rightHip.y * screenHeight
-                    )
-                )
-            }
-            
-            // Relaxed validation: only check that coordinates are reasonable (not NaN/Infinity)
-            // Allow some out-of-bounds since camera aspect ratio might differ
+            )
+
+            // Log the converted coordinates to verify they're correct
+            android.util.Log.d("MAIN_ACTIVITY_COORDS", """
+                ===== Screen Space Coordinates (after scaling) =====
+                Screen size: ${screenWidth}x${screenHeight}
+                Left Shoulder: (${bodyLandmarks.leftShoulder.x}, ${bodyLandmarks.leftShoulder.y})
+                Right Shoulder: (${bodyLandmarks.rightShoulder.x}, ${bodyLandmarks.rightShoulder.y})
+                Left Hip: (${bodyLandmarks.leftHip.x}, ${bodyLandmarks.leftHip.y})
+                Right Hip: (${bodyLandmarks.rightHip.x}, ${bodyLandmarks.rightHip.y})
+                
+                Expected: shoulders.y < hips.y (shoulders higher on screen than hips)
+                Actual: shoulders.y (${(bodyLandmarks.leftShoulder.y + bodyLandmarks.rightShoulder.y) / 2f}) vs hips.y (${(bodyLandmarks.leftHip.y + bodyLandmarks.rightHip.y) / 2f})
+            """.trimIndent())
+
+            // Rest of validation stays the same...
             val allLandmarksValid = listOf(
                 bodyLandmarks.leftShoulder, bodyLandmarks.rightShoulder,
                 bodyLandmarks.leftHip, bodyLandmarks.rightHip
@@ -476,16 +437,16 @@ private fun processLandmarksSafely(
                 landmark.x > -screenWidth && landmark.x < screenWidth * 2f &&
                 landmark.y > -screenHeight && landmark.y < screenHeight * 2f
             }
-            
+
             if (!allLandmarksValid) {
                 android.util.Log.w("MainActivity", "Landmarks validation failed")
                 onMeshDeformed(null)
                 return
             }
-            
+
             // DEBUG: Store landmarks for debug overlay
             onLandmarksComputed(bodyLandmarks)
-            
+
             // Deform mesh based on body landmarks
             val deformed = MeshDeformer.deformMesh(
                 mesh = garmentMesh,
